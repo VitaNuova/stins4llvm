@@ -1,4 +1,5 @@
 import argparse
+import subprocess
 
 parser = argparse.ArgumentParser()
 parser.add_argument('csource', help = 'C source file to protect. Ends with .c.')
@@ -10,7 +11,12 @@ if args.csource.endswith('.c') is False:
   parser.print_usage()
   parser.print_help()
   parser.exit('Error: C source file should end with .c.')
-print args.csource
-print args.connectivity_level
-print args.sens_funcs
+print "Source file passed: " + args.csource
+print "Connectivity level passed: " + str(args.connectivity_level)
+print "Sensitive functions passed: " + str(args.sens_funcs)
 
+for func in args.sens_funcs:
+   klee_output = open('klee_output', 'w')
+   p = subprocess.Popen(["python3", "/home/sip/klee/syminputC.py", func, args.csource], stdout = subprocess.PIPE)
+   out, err = p.communicate()
+   print out
