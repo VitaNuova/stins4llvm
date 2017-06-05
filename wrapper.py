@@ -19,12 +19,11 @@ for func in args.sens_funcs:
    klee_output = open('klee_output', 'w')
    p = subprocess.Popen(["python3", "/home/sip/klee/syminputC.py", func, args.csource], stdout = subprocess.PIPE)
    out, err = p.communicate()
-   print out
+   #print out
    lines = out.split('\n')
    numtests = 0
    pairs = []
    next_pair = []
-   counter = 0
    name = ''
    for line in lines:
       if line.startswith('num objects:'):
@@ -39,9 +38,24 @@ for func in args.sens_funcs:
          if name.startswith(('macke', 'model')) is False:
             next_pair.append(splitted[2].strip())
          if name == 'macke_result':
-            next_pair.append(splitted[2].strip())
+	    next_pair.append(splitted[2].strip())
             pairs.append(next_pair)
             next_pair = []
-            counter = 0
    print numtests
-   print pairs      
+   print pairs 
+
+bcsource = args.csource.replace('.c', '.bc')
+clang_call = subprocess.Popen(['clang-3.9', '-o3', '-emit-llvm', args.csource, '-c', '-o', bcsource], stdout = subprocess.PIPE)
+
+opt_args = 'opt-3.9 -load pass/libResultCheckingPass.so -instr -cl ' + str(args.connectivity_level)
+for func in args.sens_funcs:
+   opt_args += ' -sf '
+   opt_args += func
+opt_args += ' < '
+opt_args += bcsource
+opt_args += ' > /dev/null'
+print opt_args
+opt_call = subprocess.Popen(opt_args, stdout = subprocess.PIPE, shell=True)
+out, err = opt_call.communicate()
+print out
+
