@@ -41,7 +41,8 @@ for func in args.sens_funcs:
 	    next_pair.append(splitted[2].strip())
             pairs.append(next_pair)
             next_pair = []
-   print numtests
+   print 'number of pairs for function ' + func + ': ' + str(numtests)
+   print 'pairs for function ' + func + ':'
    print pairs 
 
 bcsource = args.csource.replace('.c', '.bc')
@@ -53,9 +54,26 @@ for func in args.sens_funcs:
    opt_args += func
 opt_args += ' < '
 opt_args += bcsource
-opt_args += ' > /dev/null'
-print opt_args
+opt_args += ' > instrumented.bc'
+# print opt_args
 opt_call = subprocess.Popen(opt_args, stdout = subprocess.PIPE, shell=True)
 out, err = opt_call.communicate()
+print out
+
+llc_call = subprocess.Popen(['llc-3.9', '-filetype=obj', './instrumented.bc'], stdout = subprocess.PIPE)
+out, err = llc_call.communicate()
+print out
+
+protect_to_obj_call = subprocess.Popen(['cc', '-c', 'protect.c'], stdout = subprocess.PIPE)
+out, err = protect_to_obj_call.communicate()
+print out
+
+link_all_call = subprocess.Popen(['cc', 'instrumented.o', 'protect.o'], stdout = subprocess.PIPE)
+out, err = link_all_call.communicate()
+print out
+
+
+instrumented_call = subprocess.Popen(['./a.out'], stdout = subprocess.PIPE)
+out, err = instrumented_call.communicate()
 print out
 
