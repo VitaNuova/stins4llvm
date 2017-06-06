@@ -1,5 +1,7 @@
 #include "llvm/Pass.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -58,8 +60,20 @@ namespace {
          checkParameters(M);
          srand(time(0));
          vector<string> not_sens_funcs = findNonSensitive(M);
+         LLVMContext& ctx = M.getContext();
+         Constant* protect_func = M.getOrInsertFunction("protect", Type::getVoidTy(ctx), Type::getInt32Ty(ctx), nullptr);
+         IRBuilder<> builder(ctx);
+         Instruction* i;
          for(string sens_func: sfParam) {
             vector<string> protecting_funcs = findProtectingFuncs(sens_func, not_sens_funcs);
+            for(string protecting_func: protecting_funcs) {
+               Function* protector = M.getFunction(protecting_func);
+               i = (*protector).getEntryBlock().getFirstNonPHI();
+               builder.SetInsertPoint(i);
+               Constant* arg = ConstantInt::get(Type::getInt32Ty(ctx), 2);
+               Value* args[] = {arg};
+               builder.CreateCall(protect_func, args);
+            }
          }      
       }
    };
