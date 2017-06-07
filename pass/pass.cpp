@@ -2,6 +2,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -35,8 +37,9 @@ namespace {
          Module::FunctionListType& functions = M.getFunctionList(); 
          vector<string> not_sens_funcs;
          for(Function& f: functions) {
+           Function::BasicBlockListType& list = f.getBasicBlockList();
            string name = f.getName();
-           if(find(sfParam.begin(), sfParam.end(), name) == sfParam.end()) {
+           if(find(sfParam.begin(), sfParam.end(), name) == sfParam.end() && !list.empty()) {
               not_sens_funcs.push_back(name);
            }
          }
@@ -61,18 +64,53 @@ namespace {
          srand(time(0));
          vector<string> not_sens_funcs = findNonSensitive(M);
          LLVMContext& ctx = M.getContext();
-         Constant* protect_func = M.getOrInsertFunction("protect", Type::getVoidTy(ctx), Type::getInt32Ty(ctx), nullptr);
          IRBuilder<> builder(ctx);
-         Instruction* i;
          for(string sens_func: sfParam) {
+            Function* sf_ptr = M.getFunction(sens_func);
             vector<string> protecting_funcs = findProtectingFuncs(sens_func, not_sens_funcs);
+            Constant* sens_func_const = M.getOrInsertFunction(sens_func, (*sf_ptr).getFunctionType());
             for(string protecting_func: protecting_funcs) {
                Function* protector = M.getFunction(protecting_func);
-               i = (*protector).getEntryBlock().getFirstNonPHI();
-               builder.SetInsertPoint(i);
+               protector -> dump();
+               BasicBlock& last = (*protector).back(); 
+               Instruction& last_inst = last.back();
+               errs() << "before split" << '\n';
+               last_inst.dump();
+               BasicBlock* split = last.splitBasicBlock(&last_inst);
+               Instruction& new_last_inst = last.back();
+               errs() << "after split" << '\n';
+               new_last_inst.dump();
+               builder.SetInsertPoint(&new_last_inst);
                Constant* arg = ConstantInt::get(Type::getInt32Ty(ctx), 2);
                Value* args[] = {arg};
-               builder.CreateCall(protect_func, args);
+               CallInst* call_inst = builder.CreateCall(sens_func_const, arg);
+               
+               AllocaInst* al_inst = builder.CreateAlloca((*sf_ptr).getReturnType());
+               StoreInst* store_inst = builder.CreateStore(call_inst, al_inst);
+               
+               LoadInst* load_inst = builder.CreateLoad(al_inst, "returnval");
+               Value* inEqualsOut = builder.CreateICmpEQ(load_inst, ConstantInt::get(Type::getInt32Ty(ctx), 2), "tmp");
+               
+               BasicBlock* true_bl = BasicBlock::Create(ctx, "true_bl", protector);
+               BasicBlock* false_bl = BasicBlock::Create(ctx, "false_bl", protector);
+               BranchInst* br_inst = builder.CreateCondBr(inEqualsOut, true_bl, false_bl);
+               
+               Constant* exit_func = M.getOrInsertFunction("exit", Type::getVoidTy(ctx), Type::getInt32Ty(ctx), NULL);
+               Constant* arg_to_exit = ConstantInt::get(Type::getInt32Ty(ctx), 1);
+               Value* args_to_exit[] = {arg_to_exit}; 
+               
+               builder.SetInsertPoint(true_bl);
+               builder.CreateBr(split);
+               
+               builder.SetInsertPoint(false_bl);
+               builder.CreateCall(exit_func, args_to_exit);
+               builder.CreateBr(split);
+               
+               Instruction& newest_last_inst = last.back();
+               errs() << "newnewlast" << '\n';
+               newest_last_inst.dump();
+               newest_last_inst.eraseFromParent();
+               protector -> dump();         
             }
          }      
       }
