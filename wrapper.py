@@ -15,6 +15,8 @@ print "Source file passed: " + args.csource
 print "Connectivity level passed: " + str(args.connectivity_level)
 print "Sensitive functions passed: " + str(args.sens_funcs)
 
+pairs_file = open('data.dat', 'w')
+
 for func in args.sens_funcs:
    klee_output = open('klee_output', 'w')
    p = subprocess.Popen(["python3", "/home/sip/klee/syminputC.py", func, args.csource], stdout = subprocess.PIPE)
@@ -22,7 +24,7 @@ for func in args.sens_funcs:
    #print out
    lines = out.split('\n')
    numtests = 0
-   pairs = []
+   #pairs = []
    next_pair = []
    name = ''
    for line in lines:
@@ -39,14 +41,20 @@ for func in args.sens_funcs:
             next_pair.append(splitted[2].strip())
          if name == 'macke_result':
 	    next_pair.append(splitted[2].strip())
-            pairs.append(next_pair)
+            #pairs.append(next_pair)
+            line_to_write = func + ' ' + next_pair[0] + ' ' + next_pair[1] + '\n'
+            print line_to_write
+            pairs_file.write(line_to_write)
             next_pair = []
-   print 'number of pairs for function ' + func + ': ' + str(numtests)
-   print 'pairs for function ' + func + ':'
-   print pairs 
+   print 'Number of pairs for function ' + func + ': ' + str(numtests)
+   print 'Pairs have been written to data.dat file in current directory.'
+  # print 'pairs for function ' + func + ':'
+  # print pairs 
+pairs_file.flush()
 
 bcsource = args.csource.replace('.c', '.bc')
 clang_call = subprocess.Popen(['clang-3.9', '-o3', '-emit-llvm', args.csource, '-c', '-o', bcsource], stdout = subprocess.PIPE)
+out, err = clang_call.communicate();
 
 opt_args = 'opt-3.9 -load pass/libResultCheckingPass.so -instr -cl ' + str(args.connectivity_level)
 for func in args.sens_funcs:
@@ -60,20 +68,23 @@ opt_call = subprocess.Popen(opt_args, stdout = subprocess.PIPE, shell=True)
 out, err = opt_call.communicate()
 print out
 
-llc_call = subprocess.Popen(['llc-3.9', '-filetype=obj', './instrumented.bc'], stdout = subprocess.PIPE)
-out, err = llc_call.communicate()
-print out
+clang_call = subprocess.Popen(['clang-3.9', 'instrumented.bc', '-o', 'instrumented'], subprocess.PIPE)
+out, err = clang_call.communicate()
+#print out
 
-protect_to_obj_call = subprocess.Popen(['cc', '-c', 'protect.c'], stdout = subprocess.PIPE)
-out, err = protect_to_obj_call.communicate()
-print out
+#llc_call = subprocess.Popen(['llc-3.9', '-filetype=obj', './instrumented.bc'], stdout = subprocess.PIPE)
+#out, err = llc_call.communicate()
+#print out
 
-link_all_call = subprocess.Popen(['cc', 'instrumented.o', 'protect.o'], stdout = subprocess.PIPE)
-out, err = link_all_call.communicate()
-print out
+#protect_to_obj_call = subprocess.Popen(['cc', '-c', 'protect.c'], stdout = subprocess.PIPE)
+#out, err = protect_to_obj_call.communicate()
+#print out
 
+#link_all_call = subprocess.Popen(['cc', 'instrumented.o', 'protect.o'], stdout = subprocess.PIPE)
+#out, err = link_all_call.communicate()
+#print out
 
-instrumented_call = subprocess.Popen(['./a.out'], stdout = subprocess.PIPE)
+instrumented_call = subprocess.Popen(['./instrumented'], stdout = subprocess.PIPE)
 out, err = instrumented_call.communicate()
 print out
 
