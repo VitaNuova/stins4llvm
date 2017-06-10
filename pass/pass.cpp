@@ -17,8 +17,6 @@ using namespace std;
 
 static cl::list<string> sfParam("sf", cl::desc("Sensitive functions"), cl::OneOrMore);
 static cl::opt<int> clParam("cl", cl::desc("Connectivity level"), cl::Required);
-//static cl::list<string> inputs("input", cl::desc("Input to the sensitive function"), cl::OneOrMore);
-//static cl::list<string> outputs("output", cl::desc("Output from the sensitive function"), cl::OneOrMore);
 
 namespace {
    struct ResultCheckingPass: public ModulePass {
@@ -36,14 +34,6 @@ namespace {
               exit(1);
            }
         }
-        /*if(inputs.size() != outputs.size()) {
-           fprintf(stderr, "Number of inputs should be equal to the number of outputs. Exiting.\n");
-           exit(1);
-        }
-        if(inputs.size() != sfParam.size()) {
-           fprintf(stderr, "Number of input-output pairs should be equal to the number of sensitive functions. Exiting.\n");
-           exit(1);
-        }*/
       }
       
       vector<string> findNonSensitive(Module& M) {
@@ -58,16 +48,48 @@ namespace {
          }
          return not_sens_funcs;
       }
+  
+     void getAnalysisUsage(AnalysisUsage& AU) const override {
+        AU.addRequired<CallGraphWrapperPass>();
+        AU.setPreservesAll();
+     }
+  
+     bool recurse(const CallGraphNode* node, string candidate) {
+        if((*((*node).getFunction())).getBasicBlockList().size() == 0) {
+           return false;
+        }
+        if((*((*node).getFunction())).getName() == candidate) {
+           return true;
+        }
+        bool overall_res = false;
+        for(unsigned i = 0; i < (*node).size(); i++) {
+           bool res = recurse((*node)[i], candidate);
+           overall_res = overall_res || res;
+        }
+        return overall_res;
+     }
+
+     bool checkForCycles(Module& M, string sens_func, string candidate) {
+        AnalysisUsage analysis;
+        getAnalysisUsage(analysis);
+        CallGraphWrapperPass* pass = getAnalysisIfAvailable<CallGraphWrapperPass>();
+        const CallGraph& graph = (*pass).getCallGraph();
+        Function* fsens = M.getFunction(sens_func);
+        const CallGraphNode* sens_func_graph = graph[fsens];
+        bool res = recurse(sens_func_graph, candidate);
+        return res;
+      } 
  
-      vector<string> findProtectingFuncs(string sens_func, vector<string> not_sens_funcs) {
+      vector<string> findProtectingFuncs(Module& M, string sens_func, vector<string> not_sens_funcs) {
          vector<string> protecting_funcs;
          int rand_num = 0;
          while(!(protecting_funcs.size() == clParam)) {
             rand_num = rand() % not_sens_funcs.size(); 
-            if(find(protecting_funcs.begin(), protecting_funcs.end(), not_sens_funcs[rand_num]) == protecting_funcs.end()) {
+            bool cycles = checkForCycles(M, sens_func, not_sens_funcs[rand_num]);
+            if(find(protecting_funcs.begin(), protecting_funcs.end(), not_sens_funcs[rand_num]) == protecting_funcs.end() && !cycles) {
                protecting_funcs.push_back(not_sens_funcs[rand_num]);
+               errs() << sens_func << " will be protected by " << not_sens_funcs[rand_num] << ".\n";
             }
-            errs() << sens_func << " will be protected by " << not_sens_funcs[rand_num] << ".\n";
          }           
          return protecting_funcs;
       }
@@ -92,7 +114,6 @@ namespace {
       }
       
       Constant* prepareArg(Function* sf_ptr, string input) {
-         
          Type* first_type = (*sf_ptr).getArgumentList().front().getType();
          Constant* arg;
          if((*first_type).isIntegerTy()) {
@@ -115,6 +136,7 @@ namespace {
          }
          return exp_out_val;
      }
+  
       void insertInstrumentation(Module& M, Function* protector, string sens_func, Constant* arg, Constant* exp_out_val) {
          LLVMContext& ctx = M.getContext();
          IRBuilder<> builder(ctx);
@@ -176,7 +198,7 @@ namespace {
                Function* sf_ptr = M.getFunction(sens_func);
                Constant* arg = prepareArg(sf_ptr, tokens[1]);
                Constant* exp_out = prepareExpOutput(sf_ptr, tokens[2]);
-               vector<string> protecting_funcs = findProtectingFuncs(sens_func, not_sens_funcs);     
+               vector<string> protecting_funcs = findProtectingFuncs(M, sens_func, not_sens_funcs);     
                for(string protecting_func: protecting_funcs) {
                   Function* protector = M.getFunction(protecting_func);
                   protector -> dump();
